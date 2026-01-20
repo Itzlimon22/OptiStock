@@ -1,60 +1,65 @@
 import pandas as pd
+from database import SessionLocal, engine, Base, Product, Customer, Transaction
+from sqlalchemy.orm import Session
 import os
-from database import engine, Base, Product, Customer, Transaction, SessionLocal
+
 
 def init_db():
-    print("Initializing Database...")
-    
-    # --- 1. CLEAN START ---
-    # Delete the old DB file to prevent "Unique Constraint" errors or stale data
-    if os.path.exists("optistock.db"):
-        os.remove("optistock.db")
-        print(" -> Deleted old database file (Clean Start).")
+    print("⚠️  WARNING: This will WIPE and RESET the Cloud Database.")
 
-    # --- 2. CREATE SCHEMA ---
+    # 1. DROP ALL TABLES (The Nuclear Option)
+    print("🔥 Dropping old tables...")
+    Base.metadata.drop_all(bind=engine)
+
+    # 2. CREATE NEW TABLES
+    print("🏗️  Creating new schema...")
     Base.metadata.create_all(bind=engine)
-    print(" -> Tables created.")
 
-    # --- 3. READ CSV DATA ---
-    print(" -> Reading CSV files...")
-    # parse_dates ensures '2026-01-01' becomes a real Date object, not a String
-    df_products = pd.read_csv('../data/products.csv')
-    df_customers = pd.read_csv('../data/customers.csv', parse_dates=['join_date'])
-    df_transactions = pd.read_csv('../data/transactions.csv', parse_dates=['date'])
+    db = SessionLocal()
 
-    session = SessionLocal()
+    try:
+        # 3. LOAD PRODUCTS
+        print("📦 Uploading Products...")
+        products_df = pd.read_csv("../data/products.csv")
 
-    # --- 4. INSERT PRODUCTS ---
-    print(" -> Inserting Products...")
-    # FIX: Ensure column names are strings to satisfy Type Checkers/SQLAlchemy
-    df_products.columns = df_products.columns.astype(str)
-    
-    products_data = df_products.to_dict(orient='records')
-    session.bulk_insert_mappings(Product, products_data)
+        for _, row in products_df.iterrows():
+            db.add(
+                Product(
+                    id=int(row["id"]),
+                    name=str(row["name"]),
+                    category=str(row["category"]),
+                    base_price=float(row["base_price"]),
+                    stock=int(row["stock"]),
+                )
+            )
 
-    # --- 5. INSERT CUSTOMERS ---
-    print(" -> Inserting Customers...")
-    if 'segment_type' in df_customers.columns:
-        df_customers = df_customers.drop(columns=['segment_type'])
-    
-    # FIX: Ensure column names are strings
-    df_customers.columns = df_customers.columns.astype(str)
-    
-    customers_data = df_customers.to_dict(orient='records')
-    session.bulk_insert_mappings(Customer, customers_data)
+        # 4. LOAD CUSTOMERS
+        print("bust Uploading Customers...")
+        customers_df = pd.read_csv("../data/customers.csv")
+        for _, row in customers_df.iterrows():
+            db.add(
+                Customer(
+                    id=int(row["id"]), name=str(row["name"]), email=str(row["email"])
+                )
+            )
 
-    # --- 6. INSERT TRANSACTIONS ---
-    print(" -> Inserting Transactions...")
-    # FIX: Ensure column names are strings
-    df_transactions.columns = df_transactions.columns.astype(str)
-    
-    transactions_data = df_transactions.to_dict(orient='records')
-    session.bulk_insert_mappings(Transaction, transactions_data)
+        # 5. LOAD TRANSACTIONS (Batch Insert)
+        print("💳 Uploading Transactions (This may take a moment)...")
+        transactions_df = pd.read_csv("../data/transactions.csv")
 
-    # --- 7. COMMIT ---
-    session.commit()
-    session.close()
-    print("SUCCESS: Database populated and ready for ML!")
+        # Helper: Convert DataFrame to Dictionary for Bulk Insert
+        trans_data = transactions_df.to_dict(orient="records")
+        db.bulk_insert_mappings(Transaction, trans_data)
+
+        db.commit()
+        print("✅ SUCCESS: Cloud Database updated with Real Data!")
+
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
 
 if __name__ == "__main__":
     init_db()

@@ -1,15 +1,15 @@
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import LabelEncoder
-import pickle  # <--- CHANGED: Using standard pickle instead of joblib
+from sklearn.metrics import mean_squared_error
+import pickle
 import os
 
-# --- CONFIGURATION ---
-DB_PATH = "../backend/optistock.db"
+# CONFIG
+TRANS_PATH = "../data/transactions.csv"
+PROD_PATH = "../data/products.csv"
 MODEL_PATH = "forecast_model.pkl"
 ENCODER_PATH = "category_encoder.pkl"
 
@@ -17,51 +17,60 @@ ENCODER_PATH = "category_encoder.pkl"
 def train_forecasting_model():
     print("Starting Demand Forecasting Training...")
 
-    # 1. Connect & Load Data
-    if not os.path.exists(DB_PATH):
-        raise FileNotFoundError(f"Database not found at {DB_PATH}")
+    # 1. Load Data
+    if not os.path.exists(TRANS_PATH) or not os.path.exists(PROD_PATH):
+        raise FileNotFoundError("Data files not found. Run process_real_data.py first.")
 
-    engine = create_engine(f"sqlite:///{DB_PATH}")
+    transactions = pd.read_csv(TRANS_PATH)
+    products = pd.read_csv(PROD_PATH)
 
-    print(" -> Loading sales history...")
-    query = """
-    SELECT t.date, t.product_id, t.quantity, p.category, p.base_price
-    FROM transactions t
-    JOIN products p ON t.product_id = p.product_id
-    """
-    df = pd.read_sql(query, engine)
+    # Merge to get Product Details (Category, Price)
+    df = transactions.merge(
+        products[["id", "category", "base_price"]],
+        left_on="product_id",
+        right_on="id",
+        how="left",
+    )
     df["date"] = pd.to_datetime(df["date"])
 
-    # 2. Aggregation (Daily Sales per Product)
-    print(" -> Aggregating daily sales...")
+    # 2. Feature Engineering
+    print("Engineering features (Lags & Rolling Means)...")
+
+    # Aggregate daily sales per product
     daily_sales = (
-        df.groupby(["date", "product_id", "category", "base_price"])["quantity"]
+        df.groupby(["product_id", "date", "category", "base_price"])["quantity"]
         .sum()
         .reset_index()
     )
 
-    # 3. Feature Engineering
-    print(" -> Generating time-series features...")
-    daily_sales = daily_sales.sort_values(by=["product_id", "date"])
+    # Sort for Time Series calc
+    daily_sales = daily_sales.sort_values(["product_id", "date"])
 
+    # Create Features
     daily_sales["day_of_week"] = daily_sales["date"].dt.dayofweek
     daily_sales["month"] = daily_sales["date"].dt.month
 
-    daily_sales["lag_1"] = daily_sales.groupby("product_id")["quantity"].shift(1)
-    daily_sales["lag_7"] = daily_sales.groupby("product_id")["quantity"].shift(7)
+    # Lag Features (Past Sales)
+    daily_sales["lag_1"] = daily_sales.groupby("product_id")["quantity"].shift(
+        1
+    )  # Sales yesterday
+    daily_sales["lag_7"] = daily_sales.groupby("product_id")["quantity"].shift(
+        7
+    )  # Sales last week
 
+    # Rolling Mean (Moving Average of last 3 days)
     daily_sales["rolling_mean_3"] = daily_sales.groupby("product_id")[
         "quantity"
     ].transform(lambda x: x.rolling(window=3).mean())
 
-    daily_sales = daily_sales.dropna()
+    # Drop NaN values created by lags (the first 7 days of data have no history)
+    data = daily_sales.dropna()
 
-    # 4. Encoding
-    print(" -> Encoding categories...")
+    # Encode Category (String -> Number)
     le = LabelEncoder()
-    daily_sales["category_encoded"] = le.fit_transform(daily_sales["category"])
+    data["category_encoded"] = le.fit_transform(data["category"].astype(str))
 
-    # 5. Prepare Training Data
+    # Define Input (X) and Output (y)
     features = [
         "product_id",
         "base_price",
@@ -74,35 +83,33 @@ def train_forecasting_model():
     ]
     target = "quantity"
 
-    X = daily_sales[features]
-    y = daily_sales[target]
+    X = data[features]
+    y = data[target]
 
+    # 3. Train Model
+    print(f"Training on {len(X)} rows...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
-    # 6. Train Model
-    print(" -> Training Gradient Boosting Regressor...")
     model = GradientBoostingRegressor(
         n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42
     )
     model.fit(X_train, y_train)
 
-    # 7. Evaluate
+    # 4. Evaluate
     predictions = model.predict(X_test)
     rmse = np.sqrt(mean_squared_error(y_test, predictions))
-    print(f" -> Model Performance (RMSE): {rmse:.2f}")
+    print(f" -> Model RMSE: {rmse:.2f} (Lower is better)")
 
-    # 8. Save Model & Encoders (Using Standard Pickle)
-    print(" -> Saving models...")
-
+    # 5. Save
+    print("Saving models...")
     with open(MODEL_PATH, "wb") as f:
         pickle.dump(model, f)
-
     with open(ENCODER_PATH, "wb") as f:
         pickle.dump(le, f)
 
-    print(f"SUCCESS: Forecasting model saved to {MODEL_PATH}")
+    print("✅ Forecasting Training Complete.")
 
 
 if __name__ == "__main__":
