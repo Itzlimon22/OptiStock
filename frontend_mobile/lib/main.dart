@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+
+// --- CONFIGURATION ---
+// REPLACE with your Render URL
+const String API_URL = "https://optistock-u4ix.onrender.com";
 
 void main() {
   runApp(const MyApp());
@@ -16,12 +18,15 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      title: 'OptiStock Pro',
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.teal,
-        ), // New Professional Color
+          seedColor: const Color(0xFF4F46E5), // Indigo Professional
+          brightness: Brightness.light,
+        ),
         textTheme: GoogleFonts.interTextTheme(),
+        scaffoldBackgroundColor: const Color(0xFFF8FAFC), // Slate-50
       ),
       home: const MainScreen(),
     );
@@ -37,23 +42,24 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  // SCREENS
   final List<Widget> _screens = [const ScannerPage(), const InventoryPage()];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: SafeArea(child: _screens[_selectedIndex]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
+        backgroundColor: Colors.white,
+        elevation: 2,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.qr_code_scanner),
-            label: 'Scanner',
+            icon: Icon(Icons.qr_code_scanner_rounded),
+            label: 'Customer Scan',
           ),
           NavigationDestination(
-            icon: Icon(Icons.inventory_2),
+            icon: Icon(Icons.inventory_2_rounded),
             label: 'Inventory',
           ),
         ],
@@ -62,7 +68,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// --- SCREEN 1: SCANNER (Kept similar to before) ---
+// --- TAB 1: CUSTOMER SCANNER (VIP CHECK) ---
 class ScannerPage extends StatefulWidget {
   const ScannerPage({super.key});
   @override
@@ -70,71 +76,146 @@ class ScannerPage extends StatefulWidget {
 }
 
 class _ScannerPageState extends State<ScannerPage> {
-  // USE YOUR RENDER URL HERE
-  final String apiUrl = "https://optistock-u4ix.onrender.com/analytics/segment";
+  final TextEditingController _controller = TextEditingController();
   Map<String, dynamic>? _data;
   bool _loading = false;
+  String? _error;
 
-  Future<void> _fetch(String id) async {
+  Future<void> _fetchCustomer() async {
+    if (_controller.text.isEmpty) return;
+
     setState(() {
       _loading = true;
       _data = null;
+      _error = null;
     });
     try {
-      final res = await http.get(Uri.parse('$apiUrl/$id'));
-      if (res.statusCode == 200) setState(() => _data = jsonDecode(res.body));
+      // The new data has IDs 1-5000.
+      final res = await http.get(
+        Uri.parse('$API_URL/analytics/segment/${_controller.text}'),
+      );
+
+      if (res.statusCode == 200) {
+        setState(() => _data = jsonDecode(res.body));
+      } else {
+        setState(() => _error = "Customer not found");
+      }
     } catch (e) {
-      print(e);
+      setState(() => _error = "Connection Failed");
     }
     setState(() => _loading = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("VIP Scanner")),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            TextField(
-              decoration: const InputDecoration(
-                labelText: "Enter Customer ID",
-                border: OutlineInputBorder(),
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Customer Lookup",
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Enter Customer ID (1-5000) to check VIP status",
+            style: TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 24),
+
+          TextField(
+            controller: _controller,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              hintText: "e.g. 1042",
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              onSubmitted: _fetch,
+              suffixIcon: IconButton(
+                onPressed: _fetchCustomer,
+                icon: const Icon(Icons.search),
+              ),
+              filled: true,
+              fillColor: Colors.white,
             ),
-            const SizedBox(height: 20),
-            if (_loading) const CircularProgressIndicator(),
-            if (_data != null)
-              Card(
-                color: _data!['segment'] == 'VIP'
-                    ? Colors.amber[100]
-                    : Colors.blue[50],
-                child: ListTile(
-                  title: Text(
-                    _data!['segment'],
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                    ),
-                  ),
-                  subtitle: Text(
-                    "Spend: \$${_data!['monetary'].toStringAsFixed(2)}",
-                  ),
-                  leading: Icon(
-                    _data!['segment'] == 'VIP' ? Icons.star : Icons.person,
-                  ),
-                ),
-              ),
-          ],
+            onSubmitted: (_) => _fetchCustomer(),
+          ),
+
+          const SizedBox(height: 32),
+
+          if (_loading)
+            const Center(child: CircularProgressIndicator())
+          else if (_error != null)
+            Center(
+              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+            )
+          else if (_data != null)
+            _buildResultCard(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultCard() {
+    final isVip = _data!['segment'] == 'VIP';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isVip
+              ? [
+                  const Color(0xFFFFD700),
+                  const Color(0xFFFFA500),
+                ] // Gold for VIP
+              : [
+                  const Color(0xFFE2E8F0),
+                  const Color(0xFFCBD5E1),
+                ], // Grey for Regular
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(
+            isVip ? Icons.star_rounded : Icons.person,
+            size: 48,
+            color: isVip ? Colors.white : Colors.black54,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _data!['segment'],
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.w900,
+              color: isVip ? Colors.white : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Lifetime Spend: \$${_data!['monetary'].toStringAsFixed(2)}",
+            style: TextStyle(
+              fontSize: 18,
+              color: isVip ? Colors.white.withOpacity(0.9) : Colors.black54,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// --- SCREEN 2: INVENTORY LIST (New Feature!) ---
+// --- TAB 2: INVENTORY SEARCH (NEW!) ---
 class InventoryPage extends StatefulWidget {
   const InventoryPage({super.key});
   @override
@@ -142,10 +223,10 @@ class InventoryPage extends StatefulWidget {
 }
 
 class _InventoryPageState extends State<InventoryPage> {
-  // USE YOUR RENDER URL HERE
-  final String baseUrl = "https://optistock-u4ix.onrender.com";
-  List<dynamic> _products = [];
+  List<dynamic> _allProducts = [];
+  List<dynamic> _filteredProducts = [];
   bool _loading = true;
+  final TextEditingController _searchCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -155,29 +236,57 @@ class _InventoryPageState extends State<InventoryPage> {
 
   Future<void> _loadProducts() async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/products'));
+      final res = await http.get(Uri.parse('$API_URL/products'));
       if (res.statusCode == 200) {
-        setState(() => _products = jsonDecode(res.body));
+        final data = jsonDecode(res.body) as List;
+        setState(() {
+          _allProducts = data;
+          _filteredProducts = data; // Initially show all
+          _loading = false;
+        });
       }
     } catch (e) {
       print(e);
+      setState(() => _loading = false);
     }
-    setState(() => _loading = false);
+  }
+
+  void _filterList(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        _filteredProducts = _allProducts;
+      } else {
+        _filteredProducts = _allProducts
+            .where(
+              (p) =>
+                  p['name'].toString().toLowerCase().contains(
+                    query.toLowerCase(),
+                  ) ||
+                  p['category'].toString().toLowerCase().contains(
+                    query.toLowerCase(),
+                  ),
+            )
+            .toList();
+      }
+    });
   }
 
   Future<void> _updateStock(int id, int currentStock) async {
-    final TextEditingController _ctrl = TextEditingController(
+    final TextEditingController qtyCtrl = TextEditingController(
       text: currentStock.toString(),
     );
-
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Update Stock"),
+        title: const Text("Adjust Stock"),
         content: TextField(
-          controller: _ctrl,
+          controller: qtyCtrl,
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: "New Quantity"),
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: "New Quantity",
+            border: OutlineInputBorder(),
+          ),
         ),
         actions: [
           TextButton(
@@ -187,15 +296,14 @@ class _InventoryPageState extends State<InventoryPage> {
           FilledButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              final newVal = int.tryParse(_ctrl.text);
+              final newVal = int.tryParse(qtyCtrl.text);
               if (newVal != null) {
-                // API Call to Update
                 await http.put(
-                  Uri.parse('$baseUrl/products/$id/stock'),
+                  Uri.parse('$API_URL/products/$id/stock'),
                   headers: {"Content-Type": "application/json"},
                   body: jsonEncode({"quantity": newVal}),
                 );
-                _loadProducts(); // Refresh list
+                _loadProducts(); // Refresh data to confirm sync
               }
             },
             child: const Text("Save"),
@@ -207,49 +315,139 @@ class _InventoryPageState extends State<InventoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Store Inventory")),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              itemCount: _products.length,
-              itemBuilder: (ctx, i) {
-                final p = _products[i];
-                return Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
+    return Column(
+      children: [
+        // Header & Search Area
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: Colors.black12)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Store Inventory",
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _searchCtrl,
+                onChanged: _filterList,
+                decoration: InputDecoration(
+                  hintText: "Search items...",
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
                   ),
-                  child: ListTile(
-                    leading: CircleAvatar(child: Text(p['id'].toString())),
-                    title: Text(
-                      p['name'] ?? "Product ${p['id']}",
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text("Price: \$${p['base_price']}"),
-                    trailing: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.teal[100],
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Product List
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _filteredProducts.isEmpty
+              ? const Center(child: Text("No items found"))
+              : ListView.builder(
+                  padding: const EdgeInsets.all(8),
+                  itemCount: _filteredProducts.length,
+                  itemBuilder: (ctx, i) {
+                    final p = _filteredProducts[i];
+                    return Card(
+                      elevation: 0,
+                      color: Colors.white,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
+                        side: const BorderSide(color: Color(0xFFF1F5F9)),
                       ),
-                      child: Text(
-                        "Stock: ${p['stock']}",
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        title: Text(
+                          p['name'],
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[50],
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  p['category'] ?? "General",
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.blue[800],
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                "\$${p['base_price']}",
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
+                        trailing: InkWell(
+                          onTap: () => _updateStock(p['id'], p['stock']),
+                          child: Container(
+                            width: 50,
+                            height: 40,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: (p['stock'] < 10)
+                                  ? Colors.red[50]
+                                  : Colors.green[50],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: (p['stock'] < 10)
+                                    ? Colors.red[200]!
+                                    : Colors.green[200]!,
+                              ),
+                            ),
+                            child: Text(
+                              "${p['stock']}",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: (p['stock'] < 10)
+                                    ? Colors.red[700]
+                                    : Colors.green[700],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    onTap: () => _updateStock(p['id'], p['stock'] ?? 0),
-                  ),
-                );
-              },
-            ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _loadProducts,
-        child: const Icon(Icons.refresh),
-      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 }
