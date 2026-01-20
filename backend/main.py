@@ -92,7 +92,9 @@ def get_customer_segment(customer_id: int, db: Session = Depends(get_db)):
 
     # B. Calculate RFM (Real-time Engineering)
     # Convert DB objects to DataFrame for easier math
-    data = [{"date": t.date, "total_amount": t.total_amount} for t in query]
+    # CORRECTED: Use 'timestamp' and 'total_price' to match your database.py model
+    data = [{"date": t.timestamp, "total_amount": t.total_price} for t in query]
+
     df = pd.DataFrame(data)
     df["date"] = pd.to_datetime(df["date"])
 
@@ -268,7 +270,8 @@ def get_reorder_report(db: Session = Depends(get_db)):
             report.append(
                 {
                     "product_id": p.id,
-                    "name": p.name,
+                    "name": p.name
+                    or "Unknown Product",  # <--- Fallback if name is missing
                     "current_stock": p.stock,
                     "predicted_demand": predicted,
                     "status": status,
