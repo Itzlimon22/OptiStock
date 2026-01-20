@@ -142,7 +142,7 @@ def predict_demand(request: schemas.ForecastRequest, db: Session = Depends(get_d
     For this MVP, we will mock the lag features to keep it runnable.
     """
     # A. Fetch Product Info
-    product = db.query(Product).filter(Product.product_id == request.product_id).first()
+    product = db.query(Product).filter(Product.id == request.product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
