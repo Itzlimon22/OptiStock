@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware  # <--- ADD THIS IMPORT
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import pandas as pd
@@ -15,7 +15,7 @@ import schemas
 # Initialize App
 app = FastAPI(title="OptiStock AI Engine", version="1.0")
 
-# --- ADD THIS BLOCK (CORS POLICY) ---
+# --- CORS POLICY ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allows all origins (localhost:3000, mobile app, etc.)
@@ -23,9 +23,6 @@ app.add_middleware(
     allow_methods=["*"],  # Allows GET, POST, etc.
     allow_headers=["*"],
 )
-# ------------------------------------
-
-# ... (The rest of your code remains exactly the same)
 
 # --- GLOBAL VARIABLES (The Brains) ---
 MODELS = {}
@@ -37,10 +34,10 @@ class StockUpdate(BaseModel):
 
 
 # --- LIFECYCLE: Load Models on Startup ---
-# This ensures we don't load the heavy model for every single request (Speed Boost)
 @app.on_event("startup")
 def load_models():
     print("Loading AI Models...")
+    # Adjust this path if your ml-engine folder is located elsewhere relative to backend
     base_path = "../ml-engine"
 
     try:
@@ -138,41 +135,32 @@ def get_customer_segment(customer_id: int, db: Session = Depends(get_db)):
 def predict_demand(request: schemas.ForecastRequest, db: Session = Depends(get_db)):
     """
     Predicts sales for a product for 'Tomorrow'.
-    NOTE: In a real system, we would auto-fetch lag features from DB.
-    For this MVP, we will mock the lag features to keep it runnable.
     """
     # A. Fetch Product Info
+    # Note: Use Product.id, NOT Product.product_id
     product = db.query(Product).filter(Product.id == request.product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # B. Construct Features (Mocking the complexities of Time Series for Demo)
-    # We assume 'tomorrow' is a weekday in month 11 (November) for high sales
-
+    # B. Construct Features
     # Encode Category
     try:
         cat_encoded = MODELS["encoder"].transform([product.category])[0]
     except:
         cat_encoded = 0  # Fallback
 
-    # Construct the feature vector:
-    # ['base_price', 'category_encoded', 'day_of_week', 'month', 'lag_1', 'lag_7', 'rolling_mean_3']
-
-    # SIMULATION: Let's assume average sales are around 5 units
-    # ... inside predict_demand function ...
-
-    # CORRECTED: We added 'request.product_id' as the first item to match training data
+    # Construct the feature vector matching the training data structure
     features = pd.DataFrame(
         [
             [
-                request.product_id,  # <--- THIS WAS MISSING!
+                request.product_id,
                 request.price_override or product.base_price,
                 cat_encoded,
-                0,  # Monday (0)
-                11,  # November
-                5.0,  # Lag 1 (Sold 5 yesterday)
-                5.0,  # Lag 7 (Sold 5 last week)
-                5.0,  # Rolling mean
+                0,  # Monday (0) - Mock Value
+                11,  # November - Mock Value
+                5.0,  # Lag 1 (Sold 5 yesterday) - Mock Value
+                5.0,  # Lag 7 (Sold 5 last week) - Mock Value
+                5.0,  # Rolling mean - Mock Value
             ]
         ],
         columns=[
@@ -187,8 +175,6 @@ def predict_demand(request: schemas.ForecastRequest, db: Session = Depends(get_d
         ],
     )
 
-    # ... rest of the function ...
-
     # C. Predict
     prediction = MODELS["forecast"].predict(features)[0]
 
@@ -199,13 +185,13 @@ def predict_demand(request: schemas.ForecastRequest, db: Session = Depends(get_d
     }
 
 
-# 1. Endpoint to GET all products
+# Endpoint to GET all products
 @app.get("/products")
 def get_products(db: Session = Depends(get_db)):
     return db.query(Product).all()
 
 
-# 2. Endpoint to UPDATE stock
+# Endpoint to UPDATE stock
 @app.put("/products/{product_id}/stock")
 def update_stock(product_id: int, update: StockUpdate, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
