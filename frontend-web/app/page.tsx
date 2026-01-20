@@ -20,10 +20,13 @@ export default function Home() {
     setLoading(true);
     try {
       // Connect to your FastAPI Backend
-      const res = await axios.post('https://optistock-u4ix.onrender.com/', {
-        product_id: Number(productId),
-        price_override: null,
-      });
+      const res = await axios.post(
+        'https://optistock-u4ix.onrender.com/forecast/predict',
+        {
+          product_id: Number(productId),
+          price_override: null,
+        },
+      );
       setPrediction(res.data);
     } catch (err) {
       console.error('API Error (Is Uvicorn running?):', err);
