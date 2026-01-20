@@ -1,0 +1,59 @@
+name: Weekly AI Retraining
+
+on:
+  schedule:
+    # Runs at 00:00 on Sunday
+    - cron: '0 0 * * 0'
+  # Allows you to click "Run Now" manually for testing
+  workflow_dispatch:
+
+jobs:
+  train-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Download your code
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # 2. Install Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      # 3. Install Dependencies
+      - name: Install Libraries
+        run: |
+          pip install pandas sqlalchemy psycopg2-binary scikit-learn
+
+      # 4. Fetch Data & Train (Using the scripts we made)
+      - name: Fetch Live Data & Train
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # We need to run the fetch script first
+          python data/fetch_live_data.py
+
+          # Then run the training scripts
+          cd ml-engine
+          python train_forecasting.py
+          python train_clustering.py
+
+      # 5. Commit & Push Changes
+      # If the .pkl files changed, this pushes them back to the repo.
+      # Render will see the push and auto-deploy the new models!
+      - name: Commit and Push New Models
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+
+          # Check if there are changes to commit
+          if [[ -n $(git status -s) ]]; then
+            git add ml-engine/*.pkl
+            git commit -m "🤖 Auto-Retrained AI Models [skip ci]"
+            git push
+            echo "✅ New models pushed. Render will redeploy shortly."
+          else
+            echo "⚠️ No changes in model performance. Skipping push."
+          fi
