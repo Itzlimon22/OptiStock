@@ -38,11 +38,8 @@ class _DashboardPageState extends State<DashboardPage> {
   Map<String, dynamic>? _customerData;
   bool _loading = false;
 
-  // Smart URL Selection
-  // If Web: localhost. If Android Emulator: 10.0.2.2.
-  final String apiUrl = kIsWeb
-      ? "http://127.0.0.1:8000/analytics/segment"
-      : "http://10.0.2.2:8000/analytics/segment";
+  // CLOUD URL (Works everywhere)
+  final String apiUrl = "https://optistock-u4ix.onrender.com/analytics/segment";
 
   // --- LOGIC: Fetch Data ---
   Future<void> _fetchCustomer(String id) async {

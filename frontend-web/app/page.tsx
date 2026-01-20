@@ -20,7 +20,7 @@ export default function Home() {
     setLoading(true);
     try {
       // Connect to your FastAPI Backend
-      const res = await axios.post('http://127.0.0.1:8000/forecast/predict', {
+      const res = await axios.post('https://optistock-u4ix.onrender.com/', {
         product_id: Number(productId),
         price_override: null,
       });
