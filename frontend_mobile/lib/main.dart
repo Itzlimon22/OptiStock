@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // For web detection
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:mobile_scanner/mobile_scanner.dart'; // The Camera Scanner
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 void main() {
   runApp(const MyApp());
@@ -18,264 +18,237 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.teal,
+        ), // New Professional Color
         textTheme: GoogleFonts.interTextTheme(),
       ),
-      home: const DashboardPage(),
+      home: const MainScreen(),
     );
   }
 }
 
-class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
-
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
   @override
-  State<DashboardPage> createState() => _DashboardPageState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _DashboardPageState extends State<DashboardPage> {
-  final TextEditingController _idController = TextEditingController();
-  Map<String, dynamic>? _customerData;
+class _MainScreenState extends State<MainScreen> {
+  int _selectedIndex = 0;
+
+  // SCREENS
+  final List<Widget> _screens = [const ScannerPage(), const InventoryPage()];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _screens[_selectedIndex],
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.qr_code_scanner),
+            label: 'Scanner',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2),
+            label: 'Inventory',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// --- SCREEN 1: SCANNER (Kept similar to before) ---
+class ScannerPage extends StatefulWidget {
+  const ScannerPage({super.key});
+  @override
+  State<ScannerPage> createState() => _ScannerPageState();
+}
+
+class _ScannerPageState extends State<ScannerPage> {
+  // USE YOUR RENDER URL HERE
+  final String apiUrl = "https://optistock-u4ix.onrender.com/analytics/segment";
+  Map<String, dynamic>? _data;
   bool _loading = false;
 
-  // CLOUD URL (Works everywhere)
-  final String apiUrl = "https://optistock-u4ix.onrender.com/analytics/segment";
-
-  // --- LOGIC: Fetch Data ---
-  Future<void> _fetchCustomer(String id) async {
-    if (id.isEmpty) return;
+  Future<void> _fetch(String id) async {
     setState(() {
       _loading = true;
-      _customerData = null;
+      _data = null;
     });
-
     try {
-      final response = await http.get(Uri.parse('$apiUrl/$id'));
-      if (response.statusCode == 200) {
-        setState(() => _customerData = jsonDecode(response.body));
-      } else {
-        _showSnack("Customer ID $id not found.", Colors.red);
-      }
+      final res = await http.get(Uri.parse('$apiUrl/$id'));
+      if (res.statusCode == 200) setState(() => _data = jsonDecode(res.body));
     } catch (e) {
-      _showSnack("Connection Error. Is Backend running?", Colors.red);
+      print(e);
     }
     setState(() => _loading = false);
   }
 
-  // --- LOGIC: Mock Notification ---
-  void _checkStockAlerts() {
-    // Simulating a Push Notification
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.warning, color: Colors.orange),
-            SizedBox(width: 10),
-            Text("Stock Alert"),
-          ],
-        ),
-        content: const Text(
-          "⚠️ Milk Inventory Low!\n\nAI Prediction: 50 sales expected tomorrow.\nRestock recommended immediately.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Acknowledge"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSnack(String msg, Color color) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text("Store Manager"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_active, color: Colors.orange),
-            onPressed: _checkStockAlerts, // Triggers Mock Notification
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+      appBar: AppBar(title: const Text("VIP Scanner")),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // --- SECTION 1: SCANNER CONTROLS ---
-            Card(
-              elevation: 2,
-              color: Colors.white,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    const Text(
-                      "Identify Customer",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+            TextField(
+              decoration: const InputDecoration(
+                labelText: "Enter Customer ID",
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: _fetch,
+            ),
+            const SizedBox(height: 20),
+            if (_loading) const CircularProgressIndicator(),
+            if (_data != null)
+              Card(
+                color: _data!['segment'] == 'VIP'
+                    ? Colors.amber[100]
+                    : Colors.blue[50],
+                child: ListTile(
+                  title: Text(
+                    _data!['segment'],
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 24,
                     ),
-                    const SizedBox(height: 15),
-
-                    // Manual Entry
-                    TextField(
-                      controller: _idController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: "Enter ID Manually",
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.keyboard),
-                      ),
-                    ),
-                    const SizedBox(height: 15),
-
-                    Row(
-                      children: [
-                        // Manual Button
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: () => _fetchCustomer(_idController.text),
-                            icon: const Icon(Icons.search),
-                            label: const Text("Lookup"),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-
-                        // Scanner Button (Opens Camera Page)
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ScannerScreen(
-                                    onScan: (code) {
-                                      Navigator.pop(context); // Close camera
-                                      _idController.text =
-                                          code; // Fill text box
-                                      _fetchCustomer(code); // Auto-fetch
-                                    },
-                                  ),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.qr_code_scanner),
-                            label: const Text("Scan QR"),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
+                  subtitle: Text(
+                    "Spend: \$${_data!['monetary'].toStringAsFixed(2)}",
+                  ),
+                  leading: Icon(
+                    _data!['segment'] == 'VIP' ? Icons.star : Icons.person,
+                  ),
                 ),
               ),
-            ),
-
-            const SizedBox(height: 20),
-            if (_loading) const Center(child: CircularProgressIndicator()),
-
-            // --- SECTION 2: RESULTS CARD ---
-            if (_customerData != null) _buildVipCard(),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildVipCard() {
-    final segment = _customerData!['segment'];
-    final isVip = segment == "VIP";
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isVip
-              ? [Colors.indigo, Colors.purple]
-              : [Colors.blue, Colors.blueAccent],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Icon(
-            isVip ? Icons.diamond : Icons.person,
-            size: 60,
-            color: Colors.white,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            segment.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              letterSpacing: 2,
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (isVip)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.amber,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                "OFFER 10% DISCOUNT",
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-          const Divider(color: Colors.white24, height: 30),
-          Text(
-            "Lifetime Spend: \$${_customerData!['monetary'].toStringAsFixed(2)}",
-            style: const TextStyle(color: Colors.white70),
-          ),
-        ],
       ),
     );
   }
 }
 
-// --- SCANNER SCREEN (Separate Page) ---
-class ScannerScreen extends StatelessWidget {
-  final Function(String) onScan;
-  const ScannerScreen({super.key, required this.onScan});
+// --- SCREEN 2: INVENTORY LIST (New Feature!) ---
+class InventoryPage extends StatefulWidget {
+  const InventoryPage({super.key});
+  @override
+  State<InventoryPage> createState() => _InventoryPageState();
+}
+
+class _InventoryPageState extends State<InventoryPage> {
+  // USE YOUR RENDER URL HERE
+  final String baseUrl = "https://optistock-u4ix.onrender.com";
+  List<dynamic> _products = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/products'));
+      if (res.statusCode == 200) {
+        setState(() => _products = jsonDecode(res.body));
+      }
+    } catch (e) {
+      print(e);
+    }
+    setState(() => _loading = false);
+  }
+
+  Future<void> _updateStock(int id, int currentStock) async {
+    final TextEditingController _ctrl = TextEditingController(
+      text: currentStock.toString(),
+    );
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Update Stock"),
+        content: TextField(
+          controller: _ctrl,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: "New Quantity"),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final newVal = int.tryParse(_ctrl.text);
+              if (newVal != null) {
+                // API Call to Update
+                await http.put(
+                  Uri.parse('$baseUrl/products/$id/stock'),
+                  headers: {"Content-Type": "application/json"},
+                  body: jsonEncode({"quantity": newVal}),
+                );
+                _loadProducts(); // Refresh list
+              }
+            },
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Scan Customer QR")),
-      body: MobileScanner(
-        onDetect: (capture) {
-          final List<Barcode> barcodes = capture.barcodes;
-          for (final barcode in barcodes) {
-            if (barcode.rawValue != null) {
-              onScan(barcode.rawValue!); // Send data back
-              break;
-            }
-          }
-        },
+      appBar: AppBar(title: const Text("Store Inventory")),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              itemCount: _products.length,
+              itemBuilder: (ctx, i) {
+                final p = _products[i];
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(child: Text(p['id'].toString())),
+                    title: Text(
+                      p['name'] ?? "Product ${p['id']}",
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text("Price: \$${p['base_price']}"),
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.teal[100],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        "Stock: ${p['stock']}",
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    onTap: () => _updateStock(p['id'], p['stock'] ?? 0),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _loadProducts,
+        child: const Icon(Icons.refresh),
       ),
     );
   }
