@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware  # <--- ADD THIS IMPORT
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 import pickle
@@ -28,6 +29,11 @@ app.add_middleware(
 
 # --- GLOBAL VARIABLES (The Brains) ---
 MODELS = {}
+
+
+# Define the data format for updating stock
+class StockUpdate(BaseModel):
+    quantity: int
 
 
 # --- LIFECYCLE: Load Models on Startup ---
@@ -191,3 +197,21 @@ def predict_demand(request: schemas.ForecastRequest, db: Session = Depends(get_d
         "predicted_sales": int(max(0, round(prediction))),  # No negative sales
         "confidence_score": 0.85,
     }
+
+
+# 1. Endpoint to GET all products
+@app.get("/products")
+def get_products(db: Session = Depends(get_db)):
+    return db.query(Product).all()
+
+
+# 2. Endpoint to UPDATE stock
+@app.put("/products/{product_id}/stock")
+def update_stock(product_id: int, update: StockUpdate, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    product.stock = update.quantity
+    db.commit()
+    return {"message": "Stock updated", "new_stock": product.stock}
