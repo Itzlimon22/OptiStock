@@ -201,3 +201,79 @@ def update_stock(product_id: int, update: StockUpdate, db: Session = Depends(get
     product.stock = update.quantity
     db.commit()
     return {"message": "Stock updated", "new_stock": product.stock}
+
+
+# Add this schema to schemas.py (or define in main.py for now)
+class RestockRecommendation(BaseModel):
+    product_id: int
+    name: str
+    current_stock: int
+    predicted_demand: int
+    status: str  # "OK", "LOW", "CRITICAL"
+    recommended_order: int
+
+
+@app.get("/analytics/reorder-report", response_model=list[RestockRecommendation])
+def get_reorder_report(db: Session = Depends(get_db)):
+    """
+    Scans ALL products.
+    1. Predicts demand for tomorrow.
+    2. Compares with current stock.
+    3. Returns a 'To-Buy' list for the manager.
+    """
+    products = db.query(Product).all()
+    report = []
+
+    for p in products:
+        # 1. Feature Engineering (Simplified for Demo)
+        # In a real app, you'd fetch real lags from the DB
+        try:
+            cat_encoded = MODELS["encoder"].transform([p.category])[0]
+        except:
+            cat_encoded = 0
+
+        features = pd.DataFrame(
+            [[p.id, p.base_price, cat_encoded, 0, 11, 5.0, 5.0, 5.0]],
+            columns=[
+                "product_id",
+                "base_price",
+                "category_encoded",
+                "day_of_week",
+                "month",
+                "lag_1",
+                "lag_7",
+                "rolling_mean_3",
+            ],
+        )
+
+        # 2. Predict
+        predicted = int(max(0, round(MODELS["forecast"].predict(features)[0])))
+
+        # 3. Decision Logic
+        safety_buffer = 5  # Always keep 5 extra units just in case
+        required_stock = predicted + safety_buffer
+
+        status = "OK"
+        order_amount = 0
+
+        if p.stock < predicted:
+            status = "CRITICAL"  # Will run out tomorrow!
+            order_amount = required_stock - p.stock
+        elif p.stock < required_stock:
+            status = "LOW"  # Might run out if sales are high
+            order_amount = required_stock - p.stock
+
+        # Only add to report if action is needed
+        if status != "OK":
+            report.append(
+                {
+                    "product_id": p.id,
+                    "name": p.name,
+                    "current_stock": p.stock,
+                    "predicted_demand": predicted,
+                    "status": status,
+                    "recommended_order": order_amount,
+                }
+            )
+
+    return report

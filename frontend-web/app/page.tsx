@@ -15,7 +15,7 @@ import {
 import { LayoutDashboard, Package, Save, Edit2, RefreshCw } from 'lucide-react';
 
 // --- CONFIGURATION ---
-// REPLACE with your Render URL
+// REPLACE with your Render URL (or http://127.0.0.1:8000 for local testing)
 const API_URL = 'https://optistock-u4ix.onrender.com';
 
 export default function Home() {
@@ -68,7 +68,7 @@ export default function Home() {
   );
 }
 
-// --- VIEW 1: FORECAST DASHBOARD (Your Original Code, Polished) ---
+// --- VIEW 1: FORECAST DASHBOARD ---
 function DashboardView() {
   const [productId, setProductId] = useState('1');
   const [prediction, setPrediction] = useState<any>(null);
@@ -77,18 +77,16 @@ function DashboardView() {
   const getForecast = async () => {
     setLoading(true);
     try {
-      // 1. Get Prediction
       const res = await axios.post(`${API_URL}/forecast/predict`, {
         product_id: Number(productId),
         price_override: null,
       });
 
-      // 2. Mock Graph Data (Since the API returns a single number, we generate a trend for display)
       const baseVal = res.data.predicted_sales;
       const graphData = [
         { day: 'Mon', sales: Math.max(0, baseVal - 5) },
         { day: 'Tue', sales: Math.max(0, baseVal + 2) },
-        { day: 'Wed', sales: baseVal }, // The predicted day
+        { day: 'Wed', sales: baseVal },
         { day: 'Thu', sales: Math.max(0, baseVal + 8) },
         { day: 'Fri', sales: Math.max(0, baseVal + 12) },
       ];
@@ -103,83 +101,159 @@ function DashboardView() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h2 className="text-xl font-semibold mb-4 text-slate-800">
-          AI Demand Forecast
-        </h2>
-        <div className="flex gap-4 mb-8">
-          <input
-            type="number"
-            value={productId}
-            onChange={(e) => setProductId(e.target.value)}
-            className="border border-slate-300 rounded-lg px-4 py-2 w-48 focus:ring-2 focus:ring-indigo-500 outline-none"
-            placeholder="Product ID"
-          />
-          <button
-            onClick={getForecast}
-            disabled={loading}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Analyzing...' : 'Predict Demand'}
-          </button>
-        </div>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Main Chart Column (Takes up 2/3 of space) */}
+      <div className="lg:col-span-2 space-y-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+          <h2 className="text-xl font-semibold mb-4 text-slate-800">
+            AI Demand Forecast
+          </h2>
+          <div className="flex gap-4 mb-8">
+            <input
+              type="number"
+              value={productId}
+              onChange={(e) => setProductId(e.target.value)}
+              className="border border-slate-300 rounded-lg px-4 py-2 w-48 focus:ring-2 focus:ring-indigo-500 outline-none"
+              placeholder="Product ID"
+            />
+            <button
+              onClick={getForecast}
+              disabled={loading}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Analyzing...' : 'Predict Demand'}
+            </button>
+          </div>
 
-        {prediction && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="mb-6">
-              <span className="text-slate-500 text-sm uppercase font-bold tracking-wider">
-                Predicted Sales (Next 24h)
-              </span>
-              <div className="text-4xl font-bold text-indigo-600 mt-1">
-                {Math.round(prediction.value)} units
+          {prediction && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="mb-6">
+                <span className="text-slate-500 text-sm uppercase font-bold tracking-wider">
+                  Predicted Sales (Next 24h)
+                </span>
+                <div className="text-4xl font-bold text-indigo-600 mt-1">
+                  {Math.round(prediction.value)} units
+                </div>
+              </div>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={prediction.graph}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="#e2e8f0"
+                    />
+                    <XAxis
+                      dataKey="day"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#64748b' }}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#64748b' }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: '8px',
+                        border: 'none',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="sales"
+                      stroke="#4f46e5"
+                      strokeWidth={3}
+                      dot={{ fill: '#4f46e5', strokeWidth: 2 }}
+                      activeDot={{ r: 8 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </div>
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={prediction.graph}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#e2e8f0"
-                  />
-                  <XAxis
-                    dataKey="day"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#64748b' }}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#64748b' }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: '8px',
-                      border: 'none',
-                      boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="sales"
-                    stroke="#4f46e5"
-                    strokeWidth={3}
-                    dot={{ fill: '#4f46e5', strokeWidth: 2 }}
-                    activeDot={{ r: 8 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
+      </div>
+
+      {/* Side Column (Takes up 1/3 of space) */}
+      <div className="lg:col-span-1">
+        {/* --- HERE IS THE NEW AI ALERT BOX --- */}
+        <RestockAlerts />
       </div>
     </div>
   );
 }
 
-// --- VIEW 2: INVENTORY MANAGER (New Feature) ---
+// --- NEW COMPONENT: AI RESTOCK ALERTS ---
+function RestockAlerts() {
+  const [alerts, setAlerts] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Call the new endpoint
+    axios
+      .get(`${API_URL}/analytics/reorder-report`)
+      .then((res) => setAlerts(res.data))
+      .catch((err) => console.error(err));
+  }, []);
+
+  if (alerts.length === 0) {
+    return (
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h3 className="text-lg font-bold text-slate-800">✅ System Status</h3>
+        <p className="text-slate-500 mt-2">
+          All stock levels are healthy. No immediate actions required.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-orange-200">
+      <h3 className="text-lg font-bold text-slate-800 flex items-center mb-4">
+        <span className="bg-orange-100 text-orange-600 p-2 rounded-lg mr-3 text-xl">
+          ⚠️
+        </span>
+        Action Required
+      </h3>
+      <div className="space-y-3">
+        {alerts.map((item) => (
+          <div
+            key={item.product_id}
+            className="p-3 bg-slate-50 rounded-lg border border-slate-100"
+          >
+            <div className="flex justify-between items-start">
+              <div className="font-semibold text-slate-900">{item.name}</div>
+              {item.status === 'CRITICAL' && (
+                <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold uppercase rounded">
+                  Critical
+                </span>
+              )}
+            </div>
+
+            <div className="flex justify-between items-end mt-2">
+              <div className="text-xs text-slate-500">
+                <div>Current: {item.current_stock}</div>
+                <div>Demand: {item.predicted_demand}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] uppercase text-slate-400 font-bold">
+                  Reorder
+                </div>
+                <div className="text-green-600 font-bold text-lg">
+                  +{item.recommended_order}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- VIEW 2: INVENTORY MANAGER ---
 function InventoryView() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,7 +264,6 @@ function InventoryView() {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/products`);
-      // Sort by ID to keep table stable
       const sorted = res.data.sort((a: any, b: any) => a.id - b.id);
       setProducts(sorted);
     } catch (error) {
@@ -206,7 +279,7 @@ function InventoryView() {
         quantity: Number(editValue),
       });
       setEditingId(null);
-      fetchProducts(); // Refresh list
+      fetchProducts();
     } catch (error) {
       alert('Failed to update stock');
     }
