@@ -1,89 +1,89 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
+import {
+  Plus,
+  Minus,
+  Trash2,
+  ShoppingCart,
+  Search,
+  ScanBarcode,
+  X,
+} from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
-import { Printer, Trash2, Plus, Minus, ShoppingCart } from 'lucide-react';
+import { useRef } from 'react';
+import BarcodeScannerComponent from 'react-qr-barcode-scanner'; // Import the scanner
 
-const API_URL = 'https://optistock-u4ix.onrender.com'; // Your Render URL
+const API_URL = 'https://optistock-u4ix.onrender.com';
 
 export default function POSView() {
-  const [search, setSearch] = useState('');
-  const [cart, setCart] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [cart, setCart] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Invoice Reference for Printing
-  const componentRef = useRef<HTMLDivElement>(null);
+  // SCANNER STATE
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
 
-  // 1. Search Products Live
-  const handleSearch = async (query: string) => {
-    setSearch(query);
-    if (query.length < 2) return;
+  // Print Ref
+  const printRef = useRef<HTMLDivElement>(null);
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: 'Receipt',
+  });
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
     try {
-      // In real app, make a specific search endpoint. For now, filter client-side or fetch all.
-      // We will assume you fetch all products once for speed in this demo
-      if (products.length === 0) {
-        const res = await axios.get(`${API_URL}/products`);
-        setProducts(res.data);
-      }
-    } catch (e) {
-      console.error(e);
+      const res = await axios.get(`${API_URL}/products`);
+      setProducts(res.data);
+    } catch (error) {
+      console.error('Error fetching products', error);
     }
   };
 
-  // Filter products for the dropdown
-  const results = products
-    .filter(
-      (p) =>
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.id.toString().includes(search),
-    )
-    .slice(0, 5); // Limit to 5 results
-
-  // 2. Add to Cart
+  // --- CART LOGIC ---
   const addToCart = (product: any) => {
-    const existing = cart.find((item) => item.id === product.id);
-    if (existing) {
-      setCart(
-        cart.map((item) =>
+    setCart((prev) => {
+      const existing = prev.find((item) => item.id === product.id);
+      if (existing) {
+        return prev.map((item) =>
           item.id === product.id ? { ...item, qty: item.qty + 1 } : item,
-        ),
-      );
-    } else {
-      setCart([...cart, { ...product, qty: 1 }]);
-    }
-    setSearch(''); // Clear search
+        );
+      }
+      return [...prev, { ...product, qty: 1 }];
+    });
   };
 
-  // 3. Remove/Adjust Qty
+  const removeFromCart = (id: number) => {
+    setCart((prev) => prev.filter((item) => item.id !== id));
+  };
+
   const updateQty = (id: number, delta: number) => {
-    setCart(
-      cart.map((item) => {
+    setCart((prev) =>
+      prev.map((item) => {
         if (item.id === id) {
-          return { ...item, qty: Math.max(1, item.qty + delta) };
+          const newQty = Math.max(1, item.qty + delta);
+          return { ...item, qty: newQty };
         }
         return item;
       }),
     );
   };
 
-  const removeFromCart = (id: number) => {
-    setCart(cart.filter((item) => item.id !== id));
-  };
-
-  // 4. Calculate Totals
-  const subtotal = cart.reduce(
+  const cartTotal = cart.reduce(
     (sum, item) => sum + item.base_price * item.qty,
     0,
   );
-  const tax = subtotal * 0.1; // 10% Tax example
-  const total = subtotal + tax;
 
-  // 5. Checkout Function (Updated to Save History)
+  // --- CHECKOUT LOGIC ---
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     setLoading(true);
     try {
-      // Prepare the data payload
       const payload = {
         items: cart.map((item) => ({
           product_id: item.id,
@@ -92,204 +92,235 @@ export default function POSView() {
         })),
       };
 
-      // Send to the new "Smart" endpoint
       await axios.post(`${API_URL}/pos/checkout`, payload);
-
-      // Success
-      alert('✅ Sale Recorded & History Updated!');
+      alert('✅ Sale Recorded!');
       handlePrint();
       setCart([]);
     } catch (e) {
       alert('Transaction Failed');
-      console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
-  // 6. Print Setup
-  const handlePrint = useReactToPrint({
-    contentRef: componentRef,
-    documentTitle: 'OptiStock_Invoice',
-  });
+  // --- SCANNER LOGIC ---
+  const handleScan = (err: any, result: any) => {
+    if (result) {
+      // Assuming the barcode holds the Product ID (e.g., "5")
+      // In a real app, you might match a 'barcode' field instead of 'id'
+      const scannedId = parseInt(result.text);
+      const product = products.find((p) => p.id === scannedId);
+
+      if (product) {
+        addToCart(product);
+        setIsScanning(false); // Close scanner after 1 successful scan
+        alert(`Added: ${product.name}`);
+      } else {
+        setScanError(`Product ID ${result.text} not found.`);
+      }
+    }
+  };
+
+  const filteredProducts = products.filter(
+    (p) =>
+      p.name.toLowerCase().includes(search.toLowerCase()) ||
+      p.id.toString().includes(search),
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[800px]">
-      {/* LEFT: Product Search & Cart Building */}
-      <div className="lg:col-span-2 flex flex-col gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <h2 className="text-xl font-bold text-slate-800 mb-4">New Sale</h2>
+      {/* LEFT: Product Catalog */}
+      <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+        {/* Header & Search */}
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold text-slate-800">Product Catalog</h2>
+          <div className="flex gap-2">
+            {/* SCAN BUTTON */}
+            <button
+              onClick={() => setIsScanning(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors"
+            >
+              <ScanBarcode className="w-5 h-5 mr-2" />
+              Scan Item
+            </button>
+          </div>
+        </div>
 
-          {/* Search Bar */}
-          <div className="relative mb-6">
-            <input
-              type="text"
-              placeholder="Scan barcode or type product name..."
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-lg"
-              value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-              autoFocus
-            />
-            {/* Search Results Dropdown */}
-            {search.length > 1 && (
-              <div className="absolute w-full bg-white border border-slate-200 rounded-lg shadow-xl mt-1 z-10 max-h-60 overflow-y-auto">
-                {results.map((p) => (
-                  <div
-                    key={p.id}
-                    onClick={() => addToCart(p)}
-                    className="p-3 hover:bg-indigo-50 cursor-pointer flex justify-between items-center border-b border-slate-50 last:border-0"
-                  >
-                    <div>
-                      <div className="font-bold text-slate-800">{p.name}</div>
-                      <div className="text-xs text-slate-500">
-                        Stock: {p.stock} | SKU: {p.id}
-                      </div>
-                    </div>
-                    <div className="font-bold text-indigo-600">
-                      ${p.base_price}
-                    </div>
-                  </div>
-                ))}
-                {results.length === 0 && (
-                  <div className="p-4 text-slate-400 text-center">
-                    No products found
-                  </div>
-                )}
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+          <input
+            type="text"
+            placeholder="Search products..."
+            className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Product Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 overflow-y-auto pr-2">
+          {filteredProducts.map((product) => (
+            <div
+              key={product.id}
+              onClick={() => addToCart(product)}
+              className="p-4 border border-slate-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all cursor-pointer bg-slate-50 flex flex-col items-center text-center group"
+            >
+              <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold mb-3 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                {product.name.charAt(0)}
               </div>
-            )}
-          </div>
-
-          {/* Cart Table */}
-          <div className="overflow-y-auto flex-grow max-h-[500px]">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-bold sticky top-0">
-                <tr>
-                  <th className="px-4 py-3">Item</th>
-                  <th className="px-4 py-3">Price</th>
-                  <th className="px-4 py-3">Qty</th>
-                  <th className="px-4 py-3">Total</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {cart.map((item) => (
-                  <tr key={item.id} className="group">
-                    <td className="px-4 py-3 font-medium text-slate-800 max-w-[200px] truncate">
-                      {item.name}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      ${item.base_price}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => updateQty(item.id, -1)}
-                          className="p-1 rounded bg-slate-100 hover:bg-slate-200"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="w-8 text-center font-bold">
-                          {item.qty}
-                        </span>
-                        <button
-                          onClick={() => updateQty(item.id, 1)}
-                          className="p-1 rounded bg-slate-100 hover:bg-slate-200"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-bold text-slate-800">
-                      ${(item.base_price * item.qty).toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => removeFromCart(item.id)}
-                        className="text-red-400 hover:text-red-600"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {cart.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="p-10 text-center text-slate-400">
-                      Cart is empty. Scan an item to begin.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+              <h3 className="font-semibold text-slate-800 mb-1">
+                {product.name}
+              </h3>
+              <p className="text-slate-500 text-sm mb-2">
+                Stock: {product.stock}
+              </p>
+              <div className="text-indigo-600 font-bold">
+                ${product.base_price}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* RIGHT: Invoice Preview & Pay */}
-      <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-        <h3 className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-4">
-          Invoice Preview
-        </h3>
+      {/* RIGHT: Cart & Checkout */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+        <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center">
+          <ShoppingCart className="w-5 h-5 mr-2" />
+          Current Order
+        </h2>
 
-        {/* The Printable Area */}
-        <div
-          ref={componentRef}
-          className="flex-grow bg-slate-50 p-6 rounded border border-slate-100 font-mono text-sm"
-        >
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-slate-900">
-              OptiStock Inc.
-            </h1>
-            <p className="text-slate-500">123 AI Boulevard, Tech City</p>
-            <p className="text-slate-500">Tel: +1 234 567 890</p>
-          </div>
-          <div className="border-b border-dashed border-slate-300 my-4"></div>
-
-          {cart.map((item) => (
-            <div key={item.id} className="flex justify-between mb-2">
-              <span>
-                {item.name.substring(0, 15)}... x{item.qty}
-              </span>
-              <span>${(item.base_price * item.qty).toFixed(2)}</span>
+        {/* Cart Items */}
+        <div className="flex-1 overflow-y-auto space-y-4 mb-6">
+          {cart.length === 0 ? (
+            <div className="text-center text-slate-400 mt-20">
+              Cart is empty
             </div>
-          ))}
+          ) : (
+            cart.map((item) => (
+              <div
+                key={item.id}
+                className="flex justify-between items-center bg-slate-50 p-3 rounded-lg"
+              >
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900">{item.name}</div>
+                  <div className="text-xs text-slate-500">
+                    ${item.base_price} x {item.qty}
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => updateQty(item.id, -1)}
+                    className="p-1 hover:bg-slate-200 rounded"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="font-bold w-4 text-center">{item.qty}</span>
+                  <button
+                    onClick={() => updateQty(item.id, 1)}
+                    className="p-1 hover:bg-slate-200 rounded"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => removeFromCart(item.id)}
+                    className="text-red-500 hover:bg-red-50 p-1 rounded"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
-          <div className="border-b border-dashed border-slate-300 my-4"></div>
-          <div className="flex justify-between font-bold text-slate-600">
+        {/* Totals */}
+        <div className="border-t border-slate-100 pt-4 space-y-2">
+          <div className="flex justify-between text-slate-600">
             <span>Subtotal</span>
-            <span>${subtotal.toFixed(2)}</span>
+            <span>${cartTotal.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between text-slate-500">
-            <span>Tax (10%)</span>
-            <span>${tax.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-xl font-black text-slate-900 mt-4 pt-4 border-t border-slate-900">
-            <span>TOTAL</span>
-            <span>${total.toFixed(2)}</span>
-          </div>
-
-          <div className="mt-8 text-center text-xs text-slate-400">
-            <p>Thank you for shopping with AI!</p>
-            <p>Invoice #: {Math.floor(Math.random() * 100000)}</p>
+          <div className="flex justify-between text-xl font-bold text-slate-900 pt-2">
+            <span>Total</span>
+            <span>${cartTotal.toFixed(2)}</span>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="mt-6 space-y-3">
-          <button
-            onClick={handleCheckout}
-            disabled={cart.length === 0 || loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-lg font-bold text-lg flex items-center justify-center space-x-2 transition-all disabled:opacity-50"
-          >
-            {loading ? (
-              <span>Processing...</span>
-            ) : (
-              <>
-                <ShoppingCart className="w-5 h-5" />
-                <span>Charge ${total.toFixed(2)}</span>
-              </>
+        {/* Checkout Button */}
+        <button
+          onClick={handleCheckout}
+          disabled={loading || cart.length === 0}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-bold mt-6 shadow-lg shadow-indigo-200 transition-all disabled:opacity-50 disabled:shadow-none"
+        >
+          {loading ? 'Processing...' : 'Charge / Print Receipt'}
+        </button>
+      </div>
+
+      {/* SCANNER MODAL */}
+      {isScanning && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-2xl w-[90%] max-w-md relative">
+            <button
+              onClick={() => setIsScanning(false)}
+              className="absolute top-4 right-4 p-2 bg-slate-100 rounded-full hover:bg-slate-200"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <h3 className="text-xl font-bold mb-4 text-center">
+              Scan Product Barcode
+            </h3>
+
+            <div className="bg-black rounded-lg overflow-hidden h-64 flex items-center justify-center">
+              <BarcodeScannerComponent
+                width={400}
+                height={400}
+                onUpdate={handleScan}
+              />
+            </div>
+
+            <p className="text-center text-sm text-slate-500 mt-4">
+              Point camera at a barcode. <br />
+              (For this demo, barcodes should match Product IDs: 1, 2, 3...)
+            </p>
+            {scanError && (
+              <p className="text-center text-red-500 font-bold mt-2">
+                {scanError}
+              </p>
             )}
-          </button>
+          </div>
+        </div>
+      )}
+
+      {/* HIDDEN RECEIPT TEMPLATE */}
+      <div style={{ display: 'none' }}>
+        <div
+          ref={printRef}
+          className="p-8 max-w-sm mx-auto bg-white text-slate-900 font-mono text-sm"
+        >
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-bold uppercase">OptiStock Pro</h1>
+            <p>123 Tech Street, Silicon Valley</p>
+            <p>{new Date().toLocaleString()}</p>
+          </div>
+          <hr className="border-slate-300 my-4" />
+          <div className="space-y-2">
+            {cart.map((item) => (
+              <div key={item.id} className="flex justify-between">
+                <span>
+                  {item.name} (x{item.qty})
+                </span>
+                <span>${(item.base_price * item.qty).toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+          <hr className="border-slate-300 my-4" />
+          <div className="flex justify-between text-lg font-bold">
+            <span>TOTAL</span>
+            <span>${cartTotal.toFixed(2)}</span>
+          </div>
+          <div className="text-center mt-8 text-xs">
+            Thank you for your business!
+          </div>
         </div>
       </div>
     </div>
