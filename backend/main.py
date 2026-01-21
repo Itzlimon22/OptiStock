@@ -9,6 +9,10 @@ import pickle
 import os
 from datetime import datetime
 
+# Add these imports at the top
+from sqlalchemy import func
+from datetime import timedelta, date
+
 # Import our local modules
 from database import SessionLocal, engine, Transaction, Product
 import schemas
@@ -375,3 +379,53 @@ def get_reorder_report(db: Session = Depends(get_db)):
             )
 
     return report
+
+@app.get("/analytics/dashboard")
+def get_dashboard_stats(db: Session = Depends(get_db)):
+    """
+    Returns Executive Metrics:
+    1. Total Revenue Today
+    2. Revenue Last 7 Days (Trend)
+    3. Top 5 Selling Products
+    """
+    today = datetime.now().date()
+    seven_days_ago = today - timedelta(days=7)
+
+    # A. Total Revenue Today
+    # We sum the 'total_price' of all transactions from today
+    # Note: Ensure your Transaction model has a 'total_price' column. 
+    # If not, calculate it (quantity * price).
+    todays_sales = db.query(func.sum(Transaction.total_price))\
+        .filter(func.date(Transaction.timestamp) == today)\
+        .scalar() or 0.0
+
+    # B. Revenue Trend (Last 7 Days)
+    # This creates the data for the Line Chart
+    trend_data = db.query(
+        func.date(Transaction.timestamp).label("date"),
+        func.sum(Transaction.total_price).label("revenue")
+    ).filter(Transaction.timestamp >= seven_days_ago)\
+     .group_by(func.date(Transaction.timestamp))\
+     .all()
+
+    # Format for Frontend: [{"date": "2023-10-01", "revenue": 1200}, ...]
+    chart_data = [{"date": str(t.date), "revenue": t.revenue} for t in trend_data]
+
+    # C. Top 5 Products
+    # This creates the data for the Bar Chart
+    top_products_query = db.query(
+        Product.name,
+        func.sum(Transaction.quantity).label("sold")
+    ).join(Transaction, Product.id == Transaction.product_id)\
+     .group_by(Product.name)\
+     .order_by(desc("sold"))\
+     .limit(5)\
+     .all()
+
+    top_products = [{"name": p.name, "sold": p.sold} for p in top_products_query]
+
+    return {
+        "today_revenue": todays_sales,
+        "revenue_trend": chart_data,
+        "top_products": top_products
+    }
