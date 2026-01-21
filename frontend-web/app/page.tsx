@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import POSView from './pos'; // <--- Add this line
+import ExecutiveDashboard from './dashboard-executive';
 import axios from 'axios';
 import {
   LineChart,
@@ -80,7 +81,7 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto py-8 px-4">
-        {activeTab === 'dashboard' && <DashboardView />}
+        {activeTab === 'dashboard' && <ExecutiveDashboard />}
         {activeTab === 'inventory' && <InventoryView />}
         {activeTab === 'pos' && <POSView />} {/* <--- Add this line */}
       </main>
