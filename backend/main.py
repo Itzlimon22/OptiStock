@@ -13,6 +13,12 @@ from datetime import datetime
 from sqlalchemy import func
 from datetime import timedelta, date
 
+# --- ADD THESE IMPORTS ---
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os
+
 # Import our local modules
 from database import SessionLocal, engine, Transaction, Product
 import schemas
@@ -482,3 +488,67 @@ def process_checkout(checkout: CheckoutRequest, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- ADD THIS CONFIGURATION ---
+# You will set these in Render Environment Variables later
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SENDER_EMAIL = os.getenv("MAIL_USERNAME") # Your Gmail
+SENDER_PASSWORD = os.getenv("MAIL_PASSWORD") # Your App Password
+ALERT_RECEIVER = os.getenv("MAIL_RECEIVER") # Where to send alerts
+
+# --- THE WATCHDOG FUNCTION ---
+def run_watchdog_scan(db: Session):
+    print("🐕 Watchdog: Starting scan...")
+    
+    # 1. Get all products
+    products = db.query(Product).all()
+    alerts = []
+    
+    # 2. Check each product against AI
+    for p in products:
+        # Quick Forecast (Simplified for speed)
+        # In production, you'd call the actual model, but here we use a simple heuristic
+        # or the last known prediction if you stored it. 
+        # For this demo, let's assume "Critical" is < 5 units.
+        if p.stock < 5:
+            alerts.append(f"• {p.name} (ID: {p.id}): Only {p.stock} left!")
+            
+    if not alerts:
+        print("✅ Watchdog: No alerts needed.")
+        return {"status": "All Clear"}
+        
+    # 3. Prepare Email
+    subject = f"🚨 OptiStock Alert: {len(alerts)} Critical Items"
+    body = "The AI Watchdog detected low stock levels:\n\n" + "\n".join(alerts) + "\n\nPlease restock immediately."
+    
+    msg = MIMEMultipart()
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = ALERT_RECEIVER
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+    
+    # 4. Send Email
+    try:
+        if not SENDER_EMAIL or not SENDER_PASSWORD:
+            print("❌ Watchdog: Email credentials missing.")
+            return {"status": "Failed", "detail": "Credentials missing"}
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        text = msg.as_string()
+        server.sendmail(SENDER_EMAIL, ALERT_RECEIVER, text)
+        server.quit()
+        print("📧 Watchdog: Alert sent successfully!")
+        return {"status": "Email Sent", "count": len(alerts)}
+    except Exception as e:
+        print(f"❌ Watchdog Error: {e}")
+        return {"status": "Error", "detail": str(e)}
+
+# --- TRIGGER ENDPOINT ---
+@app.post("/admin/run-watchdog")
+def trigger_watchdog(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    # Run in background so UI doesn't freeze
+    background_tasks.add_task(run_watchdog_scan, db)
+    return {"message": "Watchdog released! Check your email in 1 minute."}
