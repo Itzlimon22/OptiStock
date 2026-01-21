@@ -19,6 +19,7 @@ import {
   Package,
   Search,
   BrainCircuit,
+  Bell,
 } from 'lucide-react';
 
 const API_URL = 'https://optistock-u4ix.onrender.com';
@@ -75,6 +76,24 @@ export default function ExecutiveDashboard() {
     }
   };
 
+  // --- TRIGGER WATCHDOG ---
+  const triggerWatchdog = async () => {
+    if (
+      !confirm(
+        'Release the Watchdog? This will scan inventory and email you alerts.',
+      )
+    )
+      return;
+
+    try {
+      await axios.post(`${API_URL}/admin/run-watchdog`);
+      alert('🐕 Watchdog released! Check your email in 1-2 minutes.');
+    } catch (e) {
+      alert('Failed to trigger Watchdog. Check console.');
+      console.error(e);
+    }
+  };
+
   if (loadingStats)
     return (
       <div className="p-10 text-center animate-pulse text-slate-500">
@@ -92,12 +111,24 @@ export default function ExecutiveDashboard() {
             Real-time Analytics & AI Forecasting
           </p>
         </div>
-        <button
-          onClick={fetchStats}
-          className="text-sm text-indigo-600 font-medium hover:underline"
-        >
-          Refresh Data
-        </button>
+
+        {/* ACTION BUTTONS */}
+        <div className="flex space-x-3">
+          <button
+            onClick={triggerWatchdog}
+            className="flex items-center space-x-2 text-sm text-red-600 font-bold border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors"
+          >
+            <Bell className="w-4 h-4" />
+            <span>Test Alert</span>
+          </button>
+
+          <button
+            onClick={fetchStats}
+            className="text-sm text-indigo-600 font-medium hover:underline px-2"
+          >
+            Refresh Data
+          </button>
+        </div>
       </div>
 
       {/* SECTION 1: FINANCIAL OVERVIEW */}
@@ -150,7 +181,7 @@ export default function ExecutiveDashboard() {
 
       <div className="border-t border-slate-200 my-6"></div>
 
-      {/* SECTION 2: THE AI FORECASTER (IT IS BACK!) */}
+      {/* SECTION 2: THE AI FORECASTER */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[450px]">
         {/* Input Panel */}
         <div className="bg-slate-900 text-white p-6 rounded-xl shadow-lg flex flex-col relative overflow-hidden">
