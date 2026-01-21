@@ -380,6 +380,7 @@ def get_reorder_report(db: Session = Depends(get_db)):
 
     return report
 
+
 @app.get("/analytics/dashboard")
 def get_dashboard_stats(db: Session = Depends(get_db)):
     """
@@ -393,39 +394,91 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
     # A. Total Revenue Today
     # We sum the 'total_price' of all transactions from today
-    # Note: Ensure your Transaction model has a 'total_price' column. 
+    # Note: Ensure your Transaction model has a 'total_price' column.
     # If not, calculate it (quantity * price).
-    todays_sales = db.query(func.sum(Transaction.total_price))\
-        .filter(func.date(Transaction.timestamp) == today)\
-        .scalar() or 0.0
+    todays_sales = (
+        db.query(func.sum(Transaction.total_price))
+        .filter(func.date(Transaction.timestamp) == today)
+        .scalar()
+        or 0.0
+    )
 
     # B. Revenue Trend (Last 7 Days)
     # This creates the data for the Line Chart
-    trend_data = db.query(
-        func.date(Transaction.timestamp).label("date"),
-        func.sum(Transaction.total_price).label("revenue")
-    ).filter(Transaction.timestamp >= seven_days_ago)\
-     .group_by(func.date(Transaction.timestamp))\
-     .all()
+    trend_data = (
+        db.query(
+            func.date(Transaction.timestamp).label("date"),
+            func.sum(Transaction.total_price).label("revenue"),
+        )
+        .filter(Transaction.timestamp >= seven_days_ago)
+        .group_by(func.date(Transaction.timestamp))
+        .all()
+    )
 
     # Format for Frontend: [{"date": "2023-10-01", "revenue": 1200}, ...]
     chart_data = [{"date": str(t.date), "revenue": t.revenue} for t in trend_data]
 
     # C. Top 5 Products
     # This creates the data for the Bar Chart
-    top_products_query = db.query(
-        Product.name,
-        func.sum(Transaction.quantity).label("sold")
-    ).join(Transaction, Product.id == Transaction.product_id)\
-     .group_by(Product.name)\
-     .order_by(desc("sold"))\
-     .limit(5)\
-     .all()
+    top_products_query = (
+        db.query(Product.name, func.sum(Transaction.quantity).label("sold"))
+        .join(Transaction, Product.id == Transaction.product_id)
+        .group_by(Product.name)
+        .order_by(desc("sold"))
+        .limit(5)
+        .all()
+    )
 
     top_products = [{"name": p.name, "sold": p.sold} for p in top_products_query]
 
     return {
         "today_revenue": todays_sales,
         "revenue_trend": chart_data,
-        "top_products": top_products
+        "top_products": top_products,
     }
+
+
+# --- ADD THIS NEW SCHEMA ---
+class CartItem(BaseModel):
+    product_id: int
+    quantity: int
+    price: float
+
+
+class CheckoutRequest(BaseModel):
+    items: list[CartItem]
+
+
+# --- ADD THIS NEW ENDPOINT ---
+@app.post("/pos/checkout")
+def process_checkout(checkout: CheckoutRequest, db: Session = Depends(get_db)):
+    """
+    1. Saves each item as a Transaction (History).
+    2. Updates Inventory (Stock).
+    """
+    try:
+        # Create a timestamp for this entire batch
+        now = datetime.now()
+
+        for item in checkout.items:
+            # A. Record the Sale (History)
+            new_transaction = Transaction(
+                product_id=item.product_id,
+                customer_id=1,  # Default "Walk-in Customer" ID
+                quantity=item.quantity,
+                total_price=item.price * item.quantity,  # Store total value
+                timestamp=now,
+            )
+            db.add(new_transaction)
+
+            # B. Update Stock (Inventory)
+            product = db.query(Product).filter(Product.id == item.product_id).first()
+            if product:
+                product.stock -= item.quantity
+
+        db.commit()
+        return {"message": "Sale recorded successfully"}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

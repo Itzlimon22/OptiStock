@@ -78,23 +78,27 @@ export default function POSView() {
   const tax = subtotal * 0.1; // 10% Tax example
   const total = subtotal + tax;
 
-  // 5. Checkout Function
+  // 5. Checkout Function (Updated to Save History)
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     setLoading(true);
     try {
-      // Send each item as a transaction to Backend
-      // Ideally, create a bulk endpoint: POST /transactions/bulk
-      for (const item of cart) {
-        // Note: You need an endpoint that accepts generic transactions without customer_id if anonymous
-        // Or use a default "Walk-in Customer" ID (e.g., 1)
-        await axios.put(`${API_URL}/products/${item.id}/stock`, {
-          quantity: item.stock - item.qty, // Naive logic: requires fetching fresh stock first
-        });
-      }
-      alert('✅ Sale Recorded!');
-      handlePrint(); // Trigger Print
-      setCart([]); // Clear Cart
+      // Prepare the data payload
+      const payload = {
+        items: cart.map((item) => ({
+          product_id: item.id,
+          quantity: item.qty,
+          price: item.base_price,
+        })),
+      };
+
+      // Send to the new "Smart" endpoint
+      await axios.post(`${API_URL}/pos/checkout`, payload);
+
+      // Success
+      alert('✅ Sale Recorded & History Updated!');
+      handlePrint();
+      setCart([]);
     } catch (e) {
       alert('Transaction Failed');
       console.error(e);
