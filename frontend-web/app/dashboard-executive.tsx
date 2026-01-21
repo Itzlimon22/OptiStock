@@ -60,7 +60,6 @@ export default function ExecutiveDashboard() {
       });
 
       const base = res.data.predicted_sales;
-      // Generate mock trend line for visualization
       const trend = [
         { day: 'Mon', sales: Math.max(0, base - 5) },
         { day: 'Tue', sales: Math.max(0, base + 2) },
@@ -76,20 +75,22 @@ export default function ExecutiveDashboard() {
     }
   };
 
-  // --- TRIGGER WATCHDOG ---
+  // --- TRIGGER WATCHDOG (Visual Alert Version) ---
   const triggerWatchdog = async () => {
-    if (
-      !confirm(
-        'Release the Watchdog? This will scan inventory and email you alerts.',
-      )
-    )
+    if (!confirm('Release the Watchdog? This will scan your live inventory.'))
       return;
 
     try {
-      await axios.post(`${API_URL}/admin/run-watchdog`);
-      alert('🐕 Watchdog released! Check your email in 1-2 minutes.');
+      const res = await axios.post(`${API_URL}/admin/run-watchdog`);
+      const data = res.data;
+
+      if (data.status === 'Critical') {
+        alert(`${data.message}\n\n${data.alerts.join('\n')}`);
+      } else {
+        alert(data.message);
+      }
     } catch (e) {
-      alert('Failed to trigger Watchdog. Check console.');
+      alert('Watchdog failed to connect.');
       console.error(e);
     }
   };
