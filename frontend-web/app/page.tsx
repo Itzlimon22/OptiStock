@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import POSView from './pos'; // <--- Add this line
 import axios from 'axios';
 import {
   LineChart,
@@ -20,6 +21,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  ShoppingCart,
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -62,6 +64,15 @@ export default function Home() {
                 <Package className="w-4 h-4 mr-2" />
                 Inventory
               </button>
+              <button
+                onClick={() => setActiveTab('pos')}
+                className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'pos' ? 'bg-indigo-700' : 'hover:bg-indigo-500'
+                }`}
+              >
+                <ShoppingCart className="w-4 h-4 mr-2" />
+                POS / Checkout
+              </button>
             </div>
           </div>
         </div>
@@ -69,7 +80,9 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto py-8 px-4">
-        {activeTab === 'dashboard' ? <DashboardView /> : <InventoryView />}
+        {activeTab === 'dashboard' && <DashboardView />}
+        {activeTab === 'inventory' && <InventoryView />}
+        {activeTab === 'pos' && <POSView />} {/* <--- Add this line */}
       </main>
     </div>
   );
